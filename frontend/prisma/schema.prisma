@@ -1,0 +1,199 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// 1. Definimos los Roles posibles
+enum Rol {
+  ADMIN
+  RECEPCIONISTA
+  MUCAMA
+}
+
+// 2. Modelo de Empleado
+model Empleado {
+  id        String @id @default(uuid()) // Usamos UUID automático
+  nombre    String @unique
+  documento String @unique // Se usará como contraseña inicial
+  rol       Rol    @default(MUCAMA)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// 3. Tipos de Habitación con UUID
+model TipoHabitacion {
+  id          String  @id @default(uuid())
+  nombre      String  @unique
+  capacidad   Int
+  precio      Float
+  descripcion String?
+
+  habitacionesBase     Habitacion[] @relation("RelacionTipoBase")
+  habitacionesActual   Habitacion[] @relation("RelacionTipoActual")
+  reservasConfiguradas Reserva[]    @relation("ConfiguracionDeReserva")
+}
+
+enum Piso {
+  PLANTA_BAJA
+  PRIMER_PISO
+  SEGUNDO_PISO
+  TERCER_PISO
+  CUARTO_PISO
+}
+
+enum Ocupacion {
+  LIBRE
+  OCUPADA
+}
+
+enum Limpieza {
+  SUCIA
+  LIMPIA
+}
+
+// 4. Habitaciones con UUID
+model Habitacion {
+  id     String @id @default(uuid())
+  numero String @unique
+  piso   Piso
+  estadoOcupacion Ocupacion @default(LIBRE)
+  estadoLimpieza  Limpieza  @default(LIMPIA)
+  mantenimiento   Boolean   @default(false)
+
+  tipoBaseId String
+  tipoBase   TipoHabitacion @relation("RelacionTipoBase", fields: [tipoBaseId], references: [id])
+
+  tipoActualId String
+  tipoActual   TipoHabitacion @relation("RelacionTipoActual", fields: [tipoActualId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  reservas Reserva[]
+}
+
+// --- ENUMS PARA ESTADOS ---
+
+enum EstadoReserva {
+  PENDIENTE
+  CONFIRMADA
+  CHECKIN // El huésped ya está en el hotel (In-House)
+  CHECKOUT // Ya se retiró y pagó
+  CANCELADA
+  NOSHOW
+  FINALIZADA
+}
+
+// --- NUEVOS MODELOS ---
+
+model Cliente {
+  id        String @id @default(cuid())
+  // Datos obligatorios
+  nombre    String
+  apellido  String
+  documento String @unique // El DNI es la clave única
+
+  // Datos opcionales (marcados con ?)
+  email     String?
+  telefono  String?
+  direccion String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relaciones
+  // Una persona puede ser titular de muchas reservas (el que paga)
+  reservasComoTitular Reserva[] @relation("RelacionTitular")
+
+  // Una persona puede figurar como huésped en muchas reservas (el que duerme)
+  reservasComoHuesped Reserva[] @relation("RelacionHuespedes")
+}
+
+model Reserva {
+  id            String @id @default(uuid())
+  numeroReserva Int    @unique @default(autoincrement())
+
+  // Relación con la habitación
+  habitacionId String
+  habitacion   Habitacion @relation(fields: [habitacionId], references: [id])
+
+  tipoConfiguracion   TipoHabitacion? @relation("ConfiguracionDeReserva", fields: [tipoConfiguracionId], references: [id])
+  tipoConfiguracionId String?
+
+  precioPactado Float // El precio por noche acordado con el cliente
+  // El Cliente (quien paga/reserva)
+  // El Titular (obligatorio)
+  titularId     String
+  titular       Cliente @relation("RelacionTitular", fields: [titularId], references: [id])
+
+  // Los Huéspedes (Relación Muchos a Muchos)
+  // Esto permite que una reserva tenga varios huéspedes y 
+  // que un cliente haya estado en muchas reservas.
+  huespedes Cliente[] @relation("RelacionHuespedes")
+
+  // Fechas y Estado
+  fechaEntrada DateTime
+  fechaSalida  DateTime
+  estado       EstadoReserva @default(PENDIENTE)
+
+  // Folio / Cuenta (Cargos y Pagos)
+  movimientos Movimiento[]
+
+  notas     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// --- ENUMS ACTUALIZADOS ---
+
+enum MetodoPago {
+  EFECTIVO
+  TARJETA_DEBITO
+  TARJETA_CREDITO
+  TRANSFERENCIA
+  DEPOSITO_BANCARIO
+  BILLETERA_VIRTUAL // Ej: Mercado Pago
+  OTRO
+}
+
+// 1. Redefinimos los tipos para separar la "Deuda" del "Dinero Real"
+enum TipoMovimiento {
+  INGRESO   // Dinero que entra a la caja (Pagos, señas)
+  EGRESO    // Dinero que sale de la caja (Proveedores, sueldos, servicios)
+  CARGO     // Deuda que se suma al folio del huésped (Consumos, noches de hotel)
+}
+
+// 2. Categorías para clasificar los movimientos en el dashboard de finanzas
+enum CategoriaMovimiento {
+  HABITACION    // El costo de la estadía
+  BAR_RESTAURANTE
+  LAVANDERIA
+  PROVEEDOR     // Pago a terceros
+  SERVICIOS     // Luz, agua, internet
+  SUELDOS
+  OTROS
+}
+
+// 3. Modelo Movimiento Actualizado
+model Movimiento {
+  id        String   @id @default(uuid())
+  
+  // Hacemos la reserva opcional para permitir gastos generales del hotel
+  reservaId String?
+  reserva   Reserva? @relation(fields: [reservaId], references: [id])
+
+  tipo      TipoMovimiento
+  categoria CategoriaMovimiento @default(HABITACION)
+  
+  // El método es opcional porque un CARGO no tiene dinero físico asociado aún
+  metodoPago MetodoPago?
+
+  descripcion String   // Ej: "Seña Reserva 102", "Pago Factura Luz", "Coca Cola Frigobar"
+  monto       Float
+  fecha       DateTime @default(now())
+}
+

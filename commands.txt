@@ -1,0 +1,26 @@
+### Cargar docker
+docker compose up -d
+
+### Instalar Prisma
+npm install prisma --save-dev
+npm install @prisma/client
+
+### Inicializa Prisma
+npx prisma init
+
+### Instala el adaptador de base de datos
+npm install @prisma/adapter-pg pg
+npm install -D @types/pg
+
+# Migraciones
+npx prisma migrate dev --name init_hotel_schema
+
+npx prisma generate
+
+
+
+npm install -D ts-node
+
+npm install dotenv
+
+npx prisma db seed
