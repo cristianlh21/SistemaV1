@@ -1,6 +1,7 @@
 // src/app/(dashboard)/dashboard/reservas/_components/reservaWizard/types.ts
 
 export interface ReservaWizardData {
+  id?: string;
   habitacionId: string;
   habitacionNumero: string;   
   tipoConfiguracionId: string;
@@ -14,10 +15,12 @@ export interface ReservaWizardData {
   fechaSalida: Date | undefined;
   precioPactado: number;
   montoAdelanto: number;
+  estadoActual: string;
   notas: string;
 }
 
 export interface StepProps {
   data: ReservaWizardData;
   setData: React.Dispatch<React.SetStateAction<ReservaWizardData>>;
+  isEdit?: boolean;
 }

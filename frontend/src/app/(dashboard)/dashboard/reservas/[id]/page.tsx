@@ -3,12 +3,14 @@ import { getReservaById } from "../_actions";
 import { differenceInDays } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, LogIn, LogOut, Settings } from "lucide-react";
+import { ArrowLeft, LogIn, LogOut } from "lucide-react";
 import Link from "next/link";
 import { CardEstadia } from "../_components/ReservaWizard/resumenStep/CardEstadia";
 import { CardHuesped } from "../_components/ReservaWizard/resumenStep/CardHuesped";
 import { CardFinanzas } from "../_components/ReservaWizard/resumenStep/CardFinanzas";
 import { DialogPago } from "../_components/detalle/DialogPago";
+import { TablaMovimientos } from "../_components/detalle/TablaMovimientos";
+import { DialogModificar } from "../_components/detalle/DialogModificar";
 
 export default async function DetalleReservaPage({
   params,
@@ -88,12 +90,8 @@ export default async function DetalleReservaPage({
             noches={noches}
           />
 
-          {/* Aquí podríamos meter la tabla de movimientos más adelante */}
-          <div className="bg-white rounded-[2rem] border p-8 border-dashed border-slate-300">
-            <p className="text-center text-slate-400 font-bold uppercase text-[10px] tracking-widest">
-              Historial de movimientos y pagos (Próximamente)
-            </p>
-          </div>
+          {/* TABLA DE MOVIMIENTOS */}
+          <TablaMovimientos movimientos={reserva.movimientos || []} />
         </div>
 
         {/* PARTE DERECHA (Panel de Botones) */}
@@ -102,6 +100,8 @@ export default async function DetalleReservaPage({
             <h3 className="text-white text-[10px] font-black uppercase tracking-[0.2em] mb-6 text-center opacity-50">
               Panel de Control
             </h3>
+            
+            <DialogModificar reservaId={reserva.id} />
 
             <Button className="w-full h-16 rounded-2xl bg-blue-600 hover:bg-blue-700 font-black uppercase tracking-widest text-[10px] gap-3">
               <LogIn className="w-4 h-4" /> Iniciar Check-In
@@ -113,9 +113,7 @@ export default async function DetalleReservaPage({
               titularNombre={`${reserva.titular.apellido}, ${reserva.titular.nombre}`}
             />
 
-            <Button className="w-full h-16 rounded-2xl bg-white/5 hover:bg-white/10 text-white font-black uppercase tracking-widest text-[10px] gap-3 border border-white/10">
-              <Settings className="w-4 h-4 text-orange-400" /> Modificar Reserva
-            </Button>
+            
 
             <div className="pt-4">
               <Button

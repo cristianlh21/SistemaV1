@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from "react";
 import { es } from "date-fns/locale";
 import { Calendar } from "@/components/ui/calendar";
 import { Label } from "@/components/ui/label";
-import { AlertCircle } from "lucide-react";
+import { AlertCircle, Hotel } from "lucide-react";
 import { StepProps } from "./types";
 import {
   getHabitacionesDisponibles,
@@ -15,12 +15,12 @@ import { AnimatePresence, motion } from "framer-motion";
 import { TarifarioSeleccionado } from "./habitacionStep/TarifarioSeleccionado";
 import { HabitacionSelector } from "./habitacionStep/HabitacionSelector";
 
-export function StepHabitacion({ data, setData }: StepProps) {
+export function StepHabitacion({ data, setData, isEdit }: StepProps) {
   const [disponibles, setDisponibles] = useState<HabitacionDisponible[]>([]);
   const [tipoFiltro, setTipoFiltro] = useState<string>("todos");
   const [loading, setLoading] = useState(false);
 
-  // 1. Carga de datos (Sincronización con las fechas)
+ // 1. Carga de datos Inteligente (Sincronización con las fechas e ID de reserva)
   useEffect(() => {
     let isMounted = true;
     async function fetchDocs() {
@@ -28,10 +28,13 @@ export function StepHabitacion({ data, setData }: StepProps) {
 
       setLoading(true);
       try {
+        // Enviamos el ID de la reserva si estamos editando para que Prisma la ignore
         const res = await getHabitacionesDisponibles(
           data.fechaEntrada,
           data.fechaSalida,
+          isEdit ? data.id : undefined // 👈 Enviamos el ID si es modo edición
         );
+
         if (isMounted && res.success) {
           setDisponibles(res.data);
         }
@@ -40,10 +43,8 @@ export function StepHabitacion({ data, setData }: StepProps) {
       }
     }
     fetchDocs();
-    return () => {
-      isMounted = false;
-    };
-  }, [data.fechaEntrada, data.fechaSalida]);
+    return () => { isMounted = false; };
+  }, [data.fechaEntrada, data.fechaSalida, isEdit, data.id]); // 👈 Dependencias actualizadas
 
   // 2. DERIVACIÓN DE DATOS (Con ordenamiento por capacidad)
 const tiposDisponibles = useMemo(() => {
@@ -84,13 +85,23 @@ const habitacionesFiltradas = useMemo(() => {
   // Parte del render de StepHabitacion.tsx
   return (
     <div className="space-y-6 max-h-[70vh] overflow-y-auto pr-2 custom-scrollbar">
+      {/* Aviso de Modo Edición */}
+      {isEdit && (
+        <div className="bg-blue-50 border border-blue-100 p-4 rounded-2xl flex items-center gap-3">
+          <div className="h-8 w-8 rounded-full bg-blue-500 flex items-center justify-center text-white shrink-0">
+            <Hotel className="w-4 h-4" />
+          </div>
+          <div>
+            <p className="text-[10px] font-black uppercase text-blue-600 leading-tight">Modo Ajuste de Estadía</p>
+            <p className="text-[10px] text-blue-400 font-bold uppercase tracking-tight italic">
+              Puedes cambiar las fechas. Tu habitación actual aparecerá disponible.
+            </p>
+          </div>
+        </div>
+      )}
+
       <div className="flex flex-col lg:flex-row gap-8 items-start">
-        {/* 1. CALENDARIO */}
         <div className="flex-1 space-y-4">
-          <Label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">
-            Periodo de Estadía
-          </Label>
-          {/* 1. SECCIÓN SUPERIOR: CALENDARIO ANCHO */}
           <div className="space-y-4">
             <Label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">
               1. Periodo de Estadía
@@ -104,6 +115,9 @@ const habitacionesFiltradas = useMemo(() => {
                     ...prev,
                     fechaEntrada: range?.from,
                     fechaSalida: range?.to,
+                    // Si cambia la fecha, reseteamos la habitación para obligar a re-seleccionar
+                    // (Opcional, pero da más seguridad al recepcionista)
+                    habitacionId: prev.habitacionId === prev.habitacionId ? prev.habitacionId : ""
                   }))
                 }
                 numberOfMonths={2}
@@ -113,7 +127,6 @@ const habitacionesFiltradas = useMemo(() => {
             </div>
           </div>
 
-          {/* 2. SECCIÓN MEDIA: FILTRO DE TIPOS */}
           <FiltroTipoHabitacion
             tipos={tiposDisponibles}
             filtroActual={tipoFiltro}
@@ -121,14 +134,9 @@ const habitacionesFiltradas = useMemo(() => {
             loading={loading}
           />
 
-          {/* 3. SECCIÓN DINÁMICA: TARIFARIO (Aparece solo si hay filtro) */}
           <AnimatePresence>
             {tipoFiltro !== "todos" && (
-              <motion.div
-                initial={{ opacity: 0, y: -10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-              >
+              <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
                 <TarifarioSeleccionado
                   tipo={tiposDisponibles.find((t) => t.id === tipoFiltro)}
                 />
@@ -138,30 +146,25 @@ const habitacionesFiltradas = useMemo(() => {
         </div>
       </div>
 
-      {/* 4. RESULTADOS (HabitacionSelector) */}
       <div className="space-y-4">
         {mostrarSugerencias && (
           <div className="flex items-center gap-3 p-3 bg-orange-50 border border-orange-100 rounded-xl">
             <AlertCircle className="text-orange-500 w-4 h-4 shrink-0" />
             <p className="text-[10px] font-black uppercase text-orange-800">
-              Tipo no disponible. Mostrando opciones de capacidad similar o
-              superior.
+              Tipo no disponible. Mostrando opciones de capacidad similar o superior.
             </p>
           </div>
         )}
 
         <HabitacionSelector
-          habitaciones={
-            mostrarSugerencias ? sugerencias : habitacionesFiltradas
-          }
+          habitaciones={mostrarSugerencias ? sugerencias : habitacionesFiltradas}
           selectedId={data.habitacionId}
           onSelect={(hab) => {
             setData((prev) => ({
               ...prev,
               habitacionId: hab.id,
-              habitacionNumero: hab.numero, // El número físico (ej: "102")
+              habitacionNumero: hab.numero,
               tipoConfiguracionId: hab.tipoBaseId,
-              // Guardamos los nombres de los tipos para el resumen
               tipoConfiguracionNombre: hab.tipoBase.nombre,
               precioPactado: hab.tipoBase.precio,
             }));

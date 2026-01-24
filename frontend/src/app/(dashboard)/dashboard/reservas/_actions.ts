@@ -13,6 +13,12 @@ import {
 } from "@prisma/client";
 import { MovimientoFormValues } from "@/components/forms/MovimientoForm";
 
+
+export type HabitacionDisponible = Prisma.HabitacionGetPayload<{
+  include: { tipoBase: true };
+}>;
+
+
 export async function confirmarReserva(data: ReservaWizardData) {
   try {
     // 1. Validaciones básicas
@@ -151,20 +157,22 @@ export async function getReservas(query?: string) {
   }
 }
 
-export type HabitacionDisponible = Prisma.HabitacionGetPayload<{
-  include: { tipoBase: true };
-}>;
-
 export async function getHabitacionesDisponibles(
   fechaEntrada: Date,
   fechaSalida: Date,
+  reservaIdAExcluir?: string // 👈 1. Agregamos este parámetro opcional
 ): Promise<{ success: boolean; data: HabitacionDisponible[]; error?: string }> {
   try {
-    // 1. Buscamos los IDs de las habitaciones que YA tienen reservas en ese rango
+    // 1. Buscamos los IDs de las habitaciones ocupadas
     const habitacionesOcupadas = await prisma.reserva.findMany({
       where: {
+        // 👈 2. AQUÍ ESTÁ EL TRUCO:
+        // Si me pasas un ID, buscame todas las reservas MENOS esa.
+        ...(reservaIdAExcluir && {
+          id: { not: reservaIdAExcluir }, 
+        }),
         estado: {
-          notIn: ["CANCELADA", "NOSHOW"], // Las canceladas liberan la habitación
+          notIn: ["CANCELADA", "NOSHOW"],
         },
         AND: [
           { fechaEntrada: { lt: fechaSalida } },
@@ -176,13 +184,13 @@ export async function getHabitacionesDisponibles(
 
     const idsOcupados = habitacionesOcupadas.map((r) => r.habitacionId);
 
-    // 2. Buscamos todas las habitaciones que NO estén en esa lista de ocupadas
+    // 2. Buscamos las que no estén ocupadas (Ahora nuestra propia reserva no nos bloquea)
     const disponibles = await prisma.habitacion.findMany({
       where: {
         id: { notIn: idsOcupados },
       },
       include: {
-        tipoBase: true, // Incluimos el tipo para mostrar capacidad y nombre
+        tipoBase: true,
       },
       orderBy: {
         numero: "asc",
@@ -267,5 +275,148 @@ export async function registrarPagoAction(reservaId: string, values: MovimientoF
   } catch (error) {
     console.error("Error al registrar pago:", error);
     return { success: false, error: "No se pudo guardar el pago en la base de datos." };
+  }
+}
+
+
+export async function verificarDisponibilidadEdicion(
+  reservaId: string, 
+  habitacionId: string, 
+  inicio: Date, 
+  fin: Date
+) {
+  try {
+    const colisiones = await prisma.reserva.findMany({
+      where: {
+        habitacionId: habitacionId,
+        id: { not: reservaId }, // Ignora la que estamos editando
+        // Filtramos estados que NO bloquean el calendario
+        estado: { 
+          notIn: [EstadoReserva.CANCELADA, EstadoReserva.CANCELADA, EstadoReserva.NOSHOW] 
+        },
+        AND: [
+          { fechaEntrada: { lt: fin } },
+          { fechaSalida: { gt: inicio } },
+        ],
+      },
+    });
+
+    return { 
+      disponible: colisiones.length === 0, 
+      conflictos: colisiones.length 
+    };
+  } catch (error) {
+    console.error("Error validando disponibilidad:", error);
+    return { disponible: false, error: "Error técnico" };
+  }
+}
+
+export async function buscarAlternativasEdicion(
+  reservaId: string,
+  tipoHabitacionId: string,
+  inicio: Date,
+  fin: Date
+) {
+  try {
+    // 1. Buscamos todas las habitaciones que coincidan con el tipo actual
+    const habitacionesDelTipo = await prisma.habitacion.findMany({
+      where: { tipoActualId: tipoHabitacionId },
+      select: { id: true, numero: true }
+    });
+
+    const idsHabitaciones = habitacionesDelTipo.map(h => h.id);
+
+    // 2. Buscamos qué habitaciones están ocupadas en ese rango (excluyendo esta reserva)
+    const ocupadas = await prisma.reserva.findMany({
+      where: {
+        habitacionId: { in: idsHabitaciones },
+        id: { not: reservaId },
+        estado: { notIn: [EstadoReserva.CANCELADA, EstadoReserva.CANCELADA] },
+        AND: [
+          { fechaEntrada: { lt: fin } },
+          { fechaSalida: { gt: inicio } }
+        ]
+      },
+      select: { habitacionId: true }
+    });
+
+    const idsOcupadas = ocupadas.map(o => o.habitacionId);
+
+    // 3. Filtramos las que están realmente disponibles
+    const disponibles = habitacionesDelTipo.filter(h => !idsOcupadas.includes(h.id));
+
+    return { success: true, disponibles };
+  } catch (error) {
+    return { success: false, error: "Error en búsqueda de alternativas" };
+  }
+}
+
+export async function prepararDatosEdicion(reservaId: string): Promise<ReservaWizardData | null> {
+  const reserva = await prisma.reserva.findUnique({
+    where: { id: reservaId },
+    include: {
+      titular: true,
+      habitacion: true,
+      movimientos: true 
+    }
+  });
+
+  if (!reserva) return null;
+
+  // Solo sumamos ingresos (dinero real que ya entró)
+  const montoPagado = reserva.movimientos
+    .filter(m => m.tipo === 'INGRESO')
+    .reduce((acc, m) => acc + m.monto, 0);
+
+  return {
+    id: reserva.id,
+    fechaEntrada: reserva.fechaEntrada,
+    fechaSalida: reserva.fechaSalida,
+    habitacionId: reserva.habitacionId,
+    habitacionNumero: reserva.habitacion.numero,
+    tipoConfiguracionId: reserva.habitacion.tipoActualId,
+    tipoConfiguracionNombre: reserva.habitacion.tipoActualId,
+    titularId: reserva.titularId,
+    precioPactado: reserva.precioPactado,
+    montoAdelanto: montoPagado, // Esto ayuda a calcular el saldo en el Step 3
+    notas: reserva.notas || "",
+    huespedNombre: reserva.titular.nombre,
+    huespedApellido: reserva.titular.apellido,
+    huespedDni: reserva.titular.documento,
+    estadoActual: reserva.estado
+  };
+}
+
+
+export async function actualizarReservaAction(id: string, data: ReservaWizardData) {
+  try {
+    const reservaActualizada = await prisma.reserva.update({
+      where: { id: id },
+      data: {
+        // Actualizamos fechas y habitación
+        fechaEntrada: data.fechaEntrada,
+        fechaSalida: data.fechaSalida,
+        habitacionId: data.habitacionId,
+        
+        // Actualizamos precio y notas
+        precioPactado: data.precioPactado,
+        notas: data.notas,
+        
+        // El titular normalmente no cambia, pero lo incluimos por consistencia
+        titularId: data.titularId,
+        
+        // Si tienes tipo de configuración (ej: Cama matrimonial o Twin)
+        tipoConfiguracionId: data.tipoConfiguracionId || null,
+      },
+    });
+
+    // Limpiamos la caché para que el usuario vea los datos nuevos al instante
+    revalidatePath("/dashboard/reservas");
+    revalidatePath(`/dashboard/reservas/${id}`);
+
+    return { success: true, data: reservaActualizada };
+  } catch (error) {
+    console.error("Error al actualizar la reserva:", error);
+    return { success: false, error: "No se pudo actualizar la reserva en la base de datos" };
   }
 }
