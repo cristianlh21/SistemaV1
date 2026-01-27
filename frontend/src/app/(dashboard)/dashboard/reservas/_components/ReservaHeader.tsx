@@ -6,22 +6,14 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { CalendarCheck2, Plus, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import Link from "next/link";
 // IMPORTANTE: Asegúrate de que estas rutas coincidan con tu estructura
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import { ReservaWizard } from "./ReservaWizard";
 
 export function ReservaHeader() {
   const searchParams = useSearchParams();
   const pathname = usePathname();
   const { replace } = useRouter();
   const [term, setTerm] = useState(searchParams.get("query")?.toString() || "");
-  const [open, setOpen] = useState(false); // Estado para controlar el Modal
 
   useEffect(() => {
     const currentQuery = searchParams.get("query") || "";
@@ -58,36 +50,24 @@ export function ReservaHeader() {
         <div className="relative group">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground group-focus-within:text-primary transition-colors" />
           <Input
-            placeholder="Buscar por Habitación, DNI o Huésped..."
-            className="pl-10 h-11 bg-muted/30 focus-visible:ring-2 focus-visible:ring-primary/20 transition-all text-center font-bold"
+            placeholder="Habitación, DNI o Huésped..."
+            className="pl-10 pr-12 h-11 bg-muted/30 focus-visible:ring-2 focus-visible:ring-primary/20 transition-all text-center font-bold"
             value={term}
             onChange={(e) => setTerm(e.target.value)}
           />
+          <div className="absolute right-3 top-1/2 -translate-y-1/2 hidden sm:flex items-center gap-1 px-1.5 py-0.5 rounded border bg-background text-[10px] font-mono text-muted-foreground opacity-50">
+            <span className="text-xs">⌘</span>K
+          </div>
         </div>
 
         <div className="flex justify-end">
-          {/* INTEGRACIÓN DEL DIALOG */}
-          <Dialog open={open} onOpenChange={setOpen}>
-            <DialogTrigger asChild>
-              <Button className="h-11 px-6 font-bold gap-2 shadow-lg shadow-primary/20 uppercase tracking-tighter hover:scale-105 transition-transform">
-                <Plus className="w-5 h-5" />
-                Nueva Reserva
-              </Button>
-            </DialogTrigger>
-
-            {/* Configuración visual del Modal:
-               - max-w-[1100px]: Ancho ideal para el Wizard.
-               - p-0 y overflow-hidden: Para que el diseño del Wizard toque los bordes.
-            */}
-            <DialogContent className="w-[95vw] max-w-287.5 h-[90vh] p-0 overflow-hidden border-none bg-transparent shadow-none sm:max-w-287.5">
-              <DialogHeader className="sr-only">
-                <DialogTitle>Nueva Reserva</DialogTitle>
-              </DialogHeader>
-
-              {/* El Wizard ahora ocupará el 100% de este alto */}
-              <ReservaWizard onSuccess={() => setOpen(false)} />
-            </DialogContent>
-          </Dialog>
+          {/* Reemplazamos todo el Dialog por un Link simple y limpio */}
+          <Link href="/dashboard/reservas/nueva">
+            <Button className="h-11 px-6 font-bold gap-2 shadow-lg shadow-primary/20 uppercase tracking-tighter hover:scale-105 transition-transform">
+              <Plus className="w-5 h-5" />
+              Nueva Reserva
+            </Button>
+          </Link>
         </div>
       </div>
     </div>

@@ -1,128 +1,70 @@
 // src/app/(dashboard)/dashboard/reservas/[id]/page.tsx
+import { notFound } from "next/navigation";
 import { getReservaById } from "../_actions";
+import { BarraProgresoReserva } from "./_components/BarraProgresoReserva";
 import { differenceInDays } from "date-fns";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, LogIn, LogOut } from "lucide-react";
-import Link from "next/link";
-import { CardEstadia } from "../_components/ReservaWizard/resumenStep/CardEstadia";
-import { CardHuesped } from "../_components/ReservaWizard/resumenStep/CardHuesped";
-import { CardFinanzas } from "../_components/ReservaWizard/resumenStep/CardFinanzas";
-import { DialogPago } from "../_components/detalle/DialogPago";
-import { TablaMovimientos } from "../_components/detalle/TablaMovimientos";
-import { DialogModificar } from "../_components/detalle/DialogModificar";
+import { BotoneraAcciones } from "./_components/BotoneraAcciones";
+import { PorfolioHabitacion } from "./_components/PorfolioHabitacion";
+import { ReservaCompletaFicha } from "./types.ts";
+// Estos componentes los crearemos a continuación:
+// import { PorfolioHabitacion } from "./_components/PorfolioHabitacion";
+// import { BotoneraAcciones } from "./_components/BotoneraAcciones";
 
-export default async function DetalleReservaPage({
+export default async function FichaReservaPage({
   params,
 }: {
-  params: { id: string };
+  params: Promise<{ id: string }>; // <--- Nota que ahora es una Promesa
 }) {
-  const { id } = await params;
-  const { data: reserva } = await getReservaById(id);
+  // UNWRAPPING: Esperamos a que los params lleguen
+  const resolvedParams = await params;
+  const id = resolvedParams.id;
+  
+  // Ahora el ID ya no es undefined, es el string real
+  const res = await getReservaById(id);
+  
+  if (!res.success || !res.data) notFound();
+  
+  const reserva = res.data as ReservaCompletaFicha;
 
-  if (!reserva) return <div className="p-10">Reserva no encontrada</div>;
-
+  const totalPagado = reserva.movimientos
+    .filter((m) => m.tipo === "INGRESO")
+    .reduce((acc, m) => acc + m.monto, 0);
   const noches = Math.max(
-    1,
     differenceInDays(
       new Date(reserva.fechaSalida),
       new Date(reserva.fechaEntrada),
     ),
+    1,
   );
-  const totalEstancia = noches * (reserva.precioPactado || 0);
-  const totalPagado =
-    reserva.movimientos?.reduce((acc, m) => acc + m.monto, 0) || 0;
+  const totalEstancia = noches * reserva.precioPactado;
+  const saldoPendiente = totalEstancia - totalPagado;
 
   return (
-    <div className="max-w-7xl mx-auto p-6 space-y-6">
-      {/* 1. CABECERA: Navegación y Título */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex items-center gap-4">
-          <Link href="/dashboard/reservas">
-            <Button
-              variant="outline"
-              size="icon"
-              className="rounded-full shadow-sm"
-            >
-              <ArrowLeft className="w-4 h-4" />
-            </Button>
-          </Link>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-3xl font-black uppercase tracking-tighter">
-                {reserva.titular.apellido}, {reserva.titular.nombre}
-              </h1>
-              <Badge className="bg-blue-100 text-blue-700 hover:bg-blue-100 border-none px-3 font-bold">
-                {reserva.estado}
-              </Badge>
-            </div>
-            <p className="text-slate-500 font-medium text-sm italic">
-              Reserva #{reserva.id.slice(-6).toUpperCase()}
-            </p>
-          </div>
-        </div>
+    <div className="p-8 max-w-7xl mx-auto space-y-8 animate-in fade-in duration-500">
+      {/* 1. TÍTULO Y BARRA DE PROGRESO */}
+      <div className="space-y-2">
+        <h1 className="text-3xl font-black uppercase tracking-tighter">
+          Gestión de Reserva{" "}
+          <span className="text-primary">#{reserva.numeroReserva}</span>
+        </h1>
+        <BarraProgresoReserva estado={reserva.estado} />
       </div>
 
-      {/* 2. CUERPO: Grid 70/30 */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-        {/* PARTE IZQUIERDA (Resumen Atómico) */}
+      {/* 2. GRID PRINCIPAL */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+        {/* COLUMNA IZQUIERDA (PORFOLIO) - 8 de 12 columnas */}
         <div className="lg:col-span-8 space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <CardEstadia
-              fechaEntrada={reserva.fechaEntrada}
-              fechaSalida={reserva.fechaSalida}
-              habitacionNumero={reserva.habitacion.numero}
-              tipoConfiguracion={
-                reserva.tipoConfiguracion?.nombre || "No definido"
-              }
-            />
-            <CardHuesped
-              nombre={reserva.titular.nombre}
-              apellido={reserva.titular.apellido}
-              documento={reserva.titular.documento}
-            />
-          </div>
-
-          <CardFinanzas
-            totalEstancia={totalEstancia}
-            montoAdelanto={totalPagado}
-            precioPorNoche={reserva.precioPactado}
-            noches={noches}
-          />
-
-          {/* TABLA DE MOVIMIENTOS */}
-          <TablaMovimientos movimientos={reserva.movimientos || []} />
+          <PorfolioHabitacion reserva={reserva} />
         </div>
 
-        {/* PARTE DERECHA (Panel de Botones) */}
-        <div className="lg:col-span-4">
-          <div className="sticky top-24 bg-slate-900 rounded-[2.5rem] p-8 shadow-2xl shadow-slate-200 space-y-4 border border-slate-800">
-            <h3 className="text-white text-[10px] font-black uppercase tracking-[0.2em] mb-6 text-center opacity-50">
-              Panel de Control
-            </h3>
-            
-            <DialogModificar reservaId={reserva.id} />
-
-            <Button className="w-full h-16 rounded-2xl bg-blue-600 hover:bg-blue-700 font-black uppercase tracking-widest text-[10px] gap-3">
-              <LogIn className="w-4 h-4" /> Iniciar Check-In
-            </Button>
-
-            {/* USAMOS EL NUEVO DIALOG AQUÍ */}
-            <DialogPago
+        {/* COLUMNA DERECHA (ACCIONES) - 4 de 12 columnas */}
+        <div className="lg:col-span-4 space-y-6">
+          <div className="bg-white rounded-3xl p-6 border-2 border-slate-100 shadow-sm sticky top-8">
+            <BotoneraAcciones
               reservaId={reserva.id}
-              titularNombre={`${reserva.titular.apellido}, ${reserva.titular.nombre}`}
+              estadoActual={reserva.estado}
+              saldoPendiente={saldoPendiente}
             />
-
-            
-
-            <div className="pt-4">
-              <Button
-                variant="ghost"
-                className="w-full h-14 rounded-2xl text-red-400 hover:text-red-500 hover:bg-red-500/10 font-black uppercase tracking-widest text-[10px] gap-3"
-              >
-                <LogOut className="w-4 h-4" /> Check-Out
-              </Button>
-            </div>
           </div>
         </div>
       </div>

@@ -1,10 +1,11 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/no-unused-vars */
 // src/app/(dashboard)/dashboard/reservas/_actions.ts
 "use server";
 
 import { prisma } from "@/lib/prisma";
-import { Prisma } from "@prisma/client";
-import { ReservaWizardData } from "./_components/ReservaWizard/types";
+import { MetodoPago, Prisma } from "@prisma/client";
+import { ReservaWizardData } from "./types";
 import { revalidatePath } from "next/cache";
 import {
   TipoMovimiento,
@@ -19,66 +20,66 @@ export type HabitacionDisponible = Prisma.HabitacionGetPayload<{
 }>;
 
 
-export async function confirmarReserva(data: ReservaWizardData) {
+export async function confirmarReserva(datos: any) {
   try {
-    // 1. Validaciones básicas
-    if (
-      !data.habitacionId ||
-      !data.titularId ||
-      !data.fechaEntrada ||
-      !data.fechaSalida
-    ) {
-      return { success: false, error: "Datos de reserva incompletos." };
-    }
+    // 1. CREACIÓN DE LA RESERVA
+    const nuevaReserva = await prisma.reserva.create({
+      data: {
+        // Fechas de estadía
+        fechaEntrada: datos.fechaEntrada,
+        fechaSalida: datos.fechaSalida,
+        
+        // Lógica de Precios:
+        // 'total' es el monto acumulado de toda la estadía.
+        // 'precioPactado' es el precio por noche que acordaste (el de la Doble, por ejemplo).
+        total: datos.total, 
+        precioPactado: datos.precioPactado, 
 
-    // 2. Transacción para asegurar integridad
-    const resultado = await prisma.$transaction(async (tx) => {
-      // A. Crear la Reserva usando tus nombres de campos exactos
-      const nuevaReserva = await tx.reserva.create({
-        data: {
-          habitacionId: data.habitacionId,
-          titularId: data.titularId,
-          tipoConfiguracionId: data.tipoConfiguracionId,
-          fechaEntrada: data.fechaEntrada!,
-          fechaSalida: data.fechaSalida!,
-          precioPactado: data.precioPactado,
-          estado: EstadoReserva.PENDIENTE,
-          notas: data.notas,
-        },
-      });
+        // Relación con la Habitación Física (Donde dormirá)
+        habitacion: { connect: { id: datos.habitacionId } },
 
-      // B. Si hay adelanto, creamos el Movimiento vinculado
-      if (data.montoAdelanto > 0) {
-        await tx.movimiento.create({
-          data: {
-            reservaId: nuevaReserva.id,
+        // RELACIÓN CLAVE: Tipo de Configuración (Cómo se prepara y qué se cobra)
+        // Aquí conectamos el ID del tipo de habitación que pactaste con el cliente.
+        tipoConfiguracion: { connect: { id: datos.tipoConfiguracionId } },
+
+        // El cliente que paga
+        titular: { connect: { id: datos.titularId } },
+
+        // Estado inicial
+        estado: EstadoReserva.CONFIRMADA,
+
+        // 2. CREACIÓN DE MOVIMIENTOS (PAGOS/SEÑAS)
+        // Si el Wizard envió pagos, los creamos vinculados a esta reserva
+        movimientos: {
+          create: datos.pagos.map((p: any) => ({
+            monto: p.monto,
             tipo: TipoMovimiento.INGRESO,
             categoria: CategoriaMovimiento.HABITACION,
-            metodoPago: "EFECTIVO", // Podríamos parametrizarlo luego
-            descripcion: "PAGO DE SEÑA - RESERVA INICIAL",
-            monto: data.montoAdelanto,
-            fecha: new Date(),
-          },
-        });
+            // Mapeamos el string simple del Wizard al Enum complejo de Postgres
+            metodoPago: p.metodo === "EFECTIVO" ? MetodoPago.EFECTIVO : 
+                        p.metodo === "TARJETA" ? MetodoPago.TARJETA_CREDITO : 
+                        MetodoPago.TRANSFERENCIA,
+            descripcion: `Entrega seña reserva - Ref: ${p.referencia || 'S/R'}`
+          }))
+        }
       }
-
-      return nuevaReserva;
     });
 
-    // 3. Revalidamos las rutas necesarias
+    // 3. REVALIDACIÓN
+    // Esto limpia la caché para que la tabla de reservas se actualice sin parpadeos.
     revalidatePath("/dashboard/reservas");
-    // Si tuvieras un dashboard principal con el estado de habitaciones:
-    revalidatePath("/dashboard");
 
-    return { success: true, data: resultado };
-  } catch (error) {
-    console.error("Error al confirmar reserva:", error);
-    return {
-      success: false,
-      error: "No se pudo procesar la reserva en la base de datos.",
+    return { success: true, data: nuevaReserva };
+
+  } catch (error: any) {
+    console.error("ERROR AL GUARDAR RESERVA:", error);
+    return { 
+      success: false, 
+      error: "No se pudo guardar la reserva. Revisa que todos los campos obligatorios estén completos." 
     };
   }
 }
+
 
 export async function getReservas(query?: string) {
   try {
@@ -351,43 +352,6 @@ export async function buscarAlternativasEdicion(
   }
 }
 
-export async function prepararDatosEdicion(reservaId: string): Promise<ReservaWizardData | null> {
-  const reserva = await prisma.reserva.findUnique({
-    where: { id: reservaId },
-    include: {
-      titular: true,
-      habitacion: true,
-      movimientos: true 
-    }
-  });
-
-  if (!reserva) return null;
-
-  // Solo sumamos ingresos (dinero real que ya entró)
-  const montoPagado = reserva.movimientos
-    .filter(m => m.tipo === 'INGRESO')
-    .reduce((acc, m) => acc + m.monto, 0);
-
-  return {
-    id: reserva.id,
-    fechaEntrada: reserva.fechaEntrada,
-    fechaSalida: reserva.fechaSalida,
-    habitacionId: reserva.habitacionId,
-    habitacionNumero: reserva.habitacion.numero,
-    tipoConfiguracionId: reserva.habitacion.tipoActualId,
-    tipoConfiguracionNombre: reserva.habitacion.tipoActualId,
-    titularId: reserva.titularId,
-    precioPactado: reserva.precioPactado,
-    montoAdelanto: montoPagado, // Esto ayuda a calcular el saldo en el Step 3
-    notas: reserva.notas || "",
-    huespedNombre: reserva.titular.nombre,
-    huespedApellido: reserva.titular.apellido,
-    huespedDni: reserva.titular.documento,
-    estadoActual: reserva.estado
-  };
-}
-
-
 export async function actualizarReservaAction(id: string, data: ReservaWizardData) {
   try {
     const reservaActualizada = await prisma.reserva.update({
@@ -418,5 +382,65 @@ export async function actualizarReservaAction(id: string, data: ReservaWizardDat
   } catch (error) {
     console.error("Error al actualizar la reserva:", error);
     return { success: false, error: "No se pudo actualizar la reserva en la base de datos" };
+  }
+}
+
+export async function guardarReservaCompleta(data: any) {
+  try {
+    // 1. Calculamos el total de la estadía (noches * precio)
+    const noches = Math.ceil(
+      (new Date(data.fechaSalida).getTime() - new Date(data.fechaEntrada).getTime()) / 
+      (1000 * 60 * 60 * 24)
+    );
+    const totalEstadia = noches * data.precioPactado;
+
+    // 2. Iniciamos la transacción en la DB
+    const resultado = await prisma.$transaction(async (tx) => {
+      
+      // A. Creamos la Reserva
+      const nuevaReserva = await tx.reserva.create({
+        data: {
+          habitacionId: data.habitacionId,
+          titularId: data.titularId,
+          tipoConfiguracionId: data.tipoConfiguracionId,
+          precioPactado: data.precioPactado,
+          total: totalEstadia,
+          fechaEntrada: data.fechaEntrada,
+          fechaSalida: data.fechaSalida,
+          notas: data.notas,
+          estado: EstadoReserva.PENDIENTE,
+          // Conectamos al titular también como primer huésped por defecto
+          huespedes: {
+            connect: { id: data.titularId }
+          }
+        }
+      });
+
+      // B. Si hay una seña/adelanto, creamos el Movimiento de Ingreso
+      if (data.adelanto && data.adelanto > 0) {
+        await tx.movimiento.create({
+          data: {
+            reservaId: nuevaReserva.id,
+            tipo: TipoMovimiento.INGRESO,
+            categoria: CategoriaMovimiento.HABITACION,
+            metodoPago: data.metodoPagoAdelanto,
+            monto: data.adelanto,
+            descripcion: data.notasPago || `Seña Reserva #${nuevaReserva.numeroReserva}`,
+          }
+        });
+      }
+
+      // C. (Opcional) Podríamos actualizar el estado de la habitación aquí
+      // Pero usualmente se hace cuando el huésped llega (Check-in)
+
+      return nuevaReserva;
+    });
+
+    revalidatePath("/dashboard/reservas");
+    return { success: true, data: resultado };
+
+  } catch (error: any) {
+    console.error("Error al guardar reserva:", error);
+    return { success: false, error: "No se pudo procesar la reserva. Intente nuevamente." };
   }
 }

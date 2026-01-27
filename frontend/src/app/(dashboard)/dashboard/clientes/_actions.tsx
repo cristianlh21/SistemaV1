@@ -42,10 +42,13 @@ export async function crearCliente(data: {
       where: { documento: data.documento }
     });
 
+
     if (existe) {
       return { success: false, error: "Ya existe un cliente con ese documento" };
     }
 
+    // Limpiamos el email si es un string vacío para que Prisma no se queje
+    if (data.email === "") delete data.email;
     const nuevoCliente = await prisma.cliente.create({ data });
     
     revalidatePath("/dashboard/clientes");

@@ -20,6 +20,8 @@ model Empleado {
   documento String @unique // Se usará como contraseña inicial
   rol       Rol    @default(MUCAMA)
 
+  reservasCreadas Reserva[]
+  
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -134,6 +136,12 @@ model Reserva {
   // Esto permite que una reserva tenga varios huéspedes y 
   // que un cliente haya estado en muchas reservas.
   huespedes Cliente[] @relation("RelacionHuespedes")
+
+  total         Float    // El valor total de la estadía (noches * precioPactado)
+  
+  // Añadiría una relación de "creado por" para saber qué recepcionista hizo la reserva
+  empleadoId    String?
+  creadoPor     Empleado? @relation(fields: [empleadoId], references: [id])
 
   // Fechas y Estado
   fechaEntrada DateTime

@@ -9,7 +9,7 @@ export default async function ReservasPage({
   searchParams: Promise<{ query?: string }>;
 }) {
   const { query } = await searchParams;
-  
+
   // Pasamos el query al action para filtrar
   const res = await getReservas(query);
   const reservas = res.data || [];

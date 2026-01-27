@@ -22,6 +22,7 @@ import { Cliente } from "@prisma/client"; // Importamos el tipo de Prisma
 // Definimos la interfaz de las props para que el Wizard pueda recibir al cliente
 interface ClienteFormProps {
   onSuccess: (cliente: Cliente) => void; 
+  isEdit?: boolean;
   submitLabel?: string;
 }
 
