@@ -1,68 +1,45 @@
-import { Prisma } from "@prisma/client";
-import { Card } from "@/components/ui/card";
-import Link from "next/link";
-import { HabitacionCardHeader } from "./HabitacionCardHeader";
-import { HabitacionCardContent } from "./HabitacionCardContent";
-import { EstadoLimpiezaToggle } from "./EstadoLimpiezaToggle";
-import { EstadoMantenimientoToggle } from "./EstadoMantenimientoToggle";
+// src/app/(dashboard)/dashboard/habitaciones/_components/HabitacionCard.tsx
+"use client";
 
+import { HabitacionDashboard } from "../types";
+import { CardHeader } from "./cardHabitacion/CardHeader";
+import { CardBody } from "./cardHabitacion/CardBody";
+import { CardFooter } from "./cardHabitacion/CardFooter";
+import { isToday } from "date-fns";
 
-// 1. Definimos un tipo que incluya la relación 'tipoActual'
-// Esto le dice a TS: "Es una Habitacion, pero trae el payload de tipoActual"
-type HabitacionCompleta = Prisma.HabitacionGetPayload<{
-  include: { 
-    tipoActual: true; 
-    tipoBase: true; 
-  };
-}>;
+// src/app/(dashboard)/dashboard/habitaciones/_components/HabitacionCard.tsx
 
-export function HabitacionCard({ habitacion }: { habitacion: HabitacionCompleta }) {
-  const isOcupada = habitacion.estadoOcupacion === "OCUPADA";
-  const enMantenimiento = habitacion.mantenimiento;
+export function HabitacionCard({ habitacion }: { habitacion: HabitacionDashboard }) {
+  const reservaActiva = habitacion.reservas?.[0];
+  const hoy = new Date();
 
-  // Clase dinámica para el borde y sombra
-  const cardStyles = enMantenimiento 
-    ? "border-rose-200 bg-rose-50/20 shadow-none" 
-    : isOcupada 
-    ? "border-blue-400 bg-white shadow-blue-50" 
-    : "border-slate-200 bg-white hover:border-slate-300";
+  // DEFINICIÓN DE ESTADOS CON PRIORIDAD
+  const esSalidaHoy = !!reservaActiva && 
+                      isToday(new Date(reservaActiva.fechaSalida)) && 
+                      reservaActiva.estado === "CHECKIN";
+
+  const esEntradaHoy = !!reservaActiva && 
+                       isToday(new Date(reservaActiva.fechaEntrada)) && 
+                       reservaActiva.estado !== "CHECKIN";
+
+  const estaOcupada = habitacion.estadoOcupacion === "OCUPADA" && !esSalidaHoy;
+
+  // ASIGNACIÓN DE COLOR DE BORDE (Hexadecimales solicitados)
+  let borderColor = "border-slate-100"; // Libre
+
+  if (habitacion.mantenimiento) borderColor = "border-rose-500";
+  else if (habitacion.estadoLimpieza === "SUCIA") borderColor = "border-pink-300";
+  else if (esSalidaHoy) borderColor = "border-[#a6527c]"; // Check-out hoy
+  else if (esEntradaHoy) borderColor = "border-[#7c7c7c]"; // Reserva hoy
+  else if (estaOcupada) borderColor = "border-[#527ca6]"; // Ocupada estable
 
   return (
-    <Card className={`group relative overflow-hidden transition-all duration-300 hover:shadow-lg border-2 ${cardStyles}`}>
-      
-      <Link href={`/dashboard/habitaciones/${habitacion.id}`}>
-        <HabitacionCardHeader 
-          numero={habitacion.numero}
-          estadoOcupacion={habitacion.estadoOcupacion}
-          estadoLimpieza={habitacion.estadoLimpieza}
-          mantenimiento={habitacion.mantenimiento}
-        />
-
-        <HabitacionCardContent 
-          tipoActual={habitacion.tipoActual.nombre}
-          tipoBase={habitacion.tipoBase.nombre}
-          // Aquí podríamos pasar el nombre real del huésped en el futuro
-          nombreHuesped={isOcupada ? "García, Estanislao" : null}
-        />
-      </Link>
-
-      {/* Footer con botones atomizados */}
-      <div className={`grid grid-cols-2 divide-x border-t ${isOcupada ? 'bg-blue-50/30' : 'bg-slate-50/30'}`}>
-        <div className="flex justify-center p-1">
-          <EstadoLimpiezaToggle 
-            habitacionId={habitacion.id} 
-            estadoActual={habitacion.estadoLimpieza} 
-            variant="icon" 
-          />
-        </div>
-        <div className="flex justify-center p-1">
-          <EstadoMantenimientoToggle 
-            habitacionId={habitacion.id} 
-            enMantenimiento={habitacion.mantenimiento} 
-            variant="icon" 
-          />
-        </div>
+    <div className={`relative flex flex-col h-full rounded-[2.5rem] border-2 shadow-sm bg-white overflow-hidden transition-all hover:shadow-md ${borderColor}`}>
+      <CardHeader habitacion={habitacion} reserva={reservaActiva} />
+      <div className="flex-1 px-5 py-2">
+        <CardBody habitacion={habitacion} reserva={reservaActiva} />
       </div>
-    </Card>
+      <CardFooter habitacion={habitacion} />
+    </div>
   );
 }

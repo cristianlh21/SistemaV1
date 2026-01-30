@@ -1,6 +1,6 @@
 // src/app/(dashboard)/dashboard/reservas/[id]/page.tsx
 import { notFound } from "next/navigation";
-import { getReservaById } from "../_actions";
+import { getReservaById } from "./_actions";
 import { BarraProgresoReserva } from "./_components/BarraProgresoReserva";
 import { differenceInDays } from "date-fns";
 import { BotoneraAcciones } from "./_components/BotoneraAcciones";
@@ -26,6 +26,7 @@ export default async function FichaReservaPage({
   
   const reserva = res.data as ReservaCompletaFicha;
 
+  console.log(reserva.huespedes)
   const totalPagado = reserva.movimientos
     .filter((m) => m.tipo === "INGRESO")
     .reduce((acc, m) => acc + m.monto, 0);

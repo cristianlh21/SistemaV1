@@ -93,7 +93,7 @@ export function ReservaCard({ reserva }: { reserva: ReservaCompleta }) {
         </div>
 
         {/* INFO HUÉSPED */}
-        <div className="flex-1 min-w-[200px]">
+        <div className="flex-1 min-w-50">
           <div className="flex items-center gap-1 mb-0.5 opacity-60">
             <User className="w-3 h-3 text-slate-800" />
             <span className="text-[10px] font-bold uppercase tracking-widest text-slate-800">Titular</span>
@@ -155,7 +155,7 @@ export function ReservaCard({ reserva }: { reserva: ReservaCompleta }) {
         </div>
 
         {/* ACCIONES Y ESTADO */}
-        <div className="shrink-0 flex items-center gap-3 min-w-[160px] justify-end">
+        <div className="shrink-0 flex items-center gap-3 min-w-40 justify-end">
           <div className="flex flex-col items-end gap-1">
             <Badge className={`${style.bg} text-white border-none px-3 py-1 font-black text-[10px] uppercase tracking-widest`}>
               {reserva.estado.replace("_", " ")}

@@ -14,21 +14,24 @@ export async function getReservaById(id: string) {
       where: { id: id },
       include: {
         titular: true,
-        huespedes: true, // <--- ESTA ES LA LÍNEA QUE MANDA
-        habitacion: {
-          include: { 
-            tipoBase: true 
-          }
-        },
+        huespedes: true, 
         tipoConfiguracion: true,
-        movimientos: {
-          orderBy: { fecha: "desc" }
-        }
-      }
+        movimientos: { orderBy: { fecha: "desc" } },
+        habitacion: { include: { tipoBase: true } },
+      },
     });
 
     if (!reserva) return { success: false, error: "Reserva no encontrada" };
-    return { success: true, data: reserva };
+
+    // ESTO SE VERÁ EN LA TERMINAL (NO EN EL NAVEGADOR)
+    console.log("--- CHEQUEO DE PRISMA ---");
+    console.log("¿La propiedad 'huespedes' existe en el objeto?:", "huespedes" in reserva);
+    console.log("Valor real de huespedes:", reserva.huespedes);
+    console.log("Lista de todas las llaves del objeto:", Object.keys(reserva));
+    console.log("-------------------------");
+    
+    // Convertimos a JSON plano para evitar problemas de serialización de Next.js
+    return { success: true, data: JSON.parse(JSON.stringify(reserva)) };
   } catch (error) {
     console.error("Error al obtener reserva:", error);
     return { success: false, error: "Error de servidor" };
@@ -176,5 +179,52 @@ export async function crearMovimientoAction(data: any) {
   } catch (error) {
     console.error("Error al crear movimiento:", error);
     return { success: false, error: "No se pudo guardar el movimiento" };
+  }
+}
+
+export async function crearMovimientoActionCheckout(data: any) {
+  try {
+    await prisma.movimiento.create({
+      data: {
+        monto: data.monto,
+        tipo: data.tipo,
+        categoria: data.categoria,
+        metodoPago: data.metodoPago,
+        descripcion: data.descripcion,
+        reservaId: data.reservaId || null, // Muy importante para vincularlo
+        fecha: new Date(),
+      },
+    });
+    
+    // Esto es CLAVE: obliga a Next.js a refrescar el Ticket y calcular el saldo nuevo
+    revalidatePath("/dashboard/reservas/[id]/checkout", "page");
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: "No se pudo registrar el pago" };
+  }
+}
+
+export async function finalizarCheckoutAction(reservaId: string, habitacionId: string) {
+  try {
+    await prisma.$transaction([
+      // 1. Marcar la reserva como finalizada
+      prisma.reserva.update({
+        where: { id: reservaId },
+        data: { estado: "CHECKOUT" }
+      }),
+      // 2. Liberar la habitación y marcarla para limpieza
+      prisma.habitacion.update({
+        where: { id: habitacionId },
+        data: { 
+          estadoOcupacion: "LIBRE",
+          estadoLimpieza: "SUCIA" // Así aparece en rosa/rojo en tu dashboard
+        }
+      })
+    ]);
+
+    revalidatePath("/dashboard/habitaciones");
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: "No se pudo finalizar el checkout" };
   }
 }

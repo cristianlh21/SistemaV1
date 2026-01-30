@@ -28,6 +28,9 @@ import {
 } from "@/components/forms/MovimientoForm"; // Asegúrate de que esta ruta sea correcta
 import { crearMovimientoAction } from "../_actions";
 import { customToast } from "@/lib/toast";
+import { useRouter } from "next/navigation";
+
+
 
 interface Props {
   reservaId: string;
@@ -43,6 +46,7 @@ export function BotoneraAcciones({
   const [loading, setLoading] = useState(false);
   const [isPagoOpen, setIsPagoOpen] = useState(false);
 
+  const router = useRouter();
   // MANEJADOR DE CAMBIO DE ESTADO (CONFIRMAR, CHECKIN, ETC)
   const handleUpdateEstado = async (nuevoEstado: EstadoReserva) => {
     if (nuevoEstado === "CHECKOUT" && saldoPendiente > 0) {
@@ -103,18 +107,19 @@ export function BotoneraAcciones({
 
         {estadoActual === "CONFIRMADA" && (
           <Button
-            disabled={loading}
-            onClick={() => handleUpdateEstado("CHECKIN")}
+            onClick={() =>
+              router.push(`/dashboard/reservas/${reservaId}/checkin`)
+            }
             className="w-full h-14 rounded-2xl font-black uppercase text-xs tracking-widest bg-[#80a0c0] hover:bg-[#527ca6] text-white border-b-4 border-[#527ca6] transition-all"
           >
-            <ArrowBigRightDash className="w-5 h-5 mr-2" /> Realizar Check-in
+            <ArrowBigRightDash className="w-5 h-5 mr-2" /> Ir al Check-in
           </Button>
         )}
 
         {estadoActual === "CHECKIN" && (
           <Button
             disabled={loading}
-            onClick={() => handleUpdateEstado("CHECKOUT")}
+            onClick={() => router.push(`/dashboard/reservas/${reservaId}/checkout`)}
             className="w-full h-14 rounded-2xl font-black uppercase text-xs tracking-widest bg-slate-800 hover:bg-slate-900 text-white border-b-4 border-black transition-all"
           >
             <ArrowRightToLine className="w-5 h-5 mr-2" /> Realizar Check-out

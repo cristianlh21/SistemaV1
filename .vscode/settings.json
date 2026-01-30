@@ -4,6 +4,8 @@
         "busqueda",
         "categoria",
         "Categoria",
+        "checkin",
+        "Checkin",
         "CHECKIN",
         "Configuracion",
         "Confirmacion",
@@ -31,11 +33,13 @@
         "pers",
         "postgresql",
         "Relacion",
+        "Renderizado",
         "renderizar",
         "resetear",
         "Seleccion",
         "Seteamos",
         "telefono",
-        "uuid"
+        "uuid",
+        "walkin"
     ]
 }
