@@ -23,7 +23,7 @@ export function CardFooter({ habitacion }: { habitacion: HabitacionDashboard }) 
         />
       </div>
       <div className="flex justify-center items-center py-4 hover:bg-white transition-colors cursor-pointer group text-slate-300 hover:text-slate-600">
-        <Link href={`/dashboard/habitaciones/${habitacion.id}/settings`} className="flex items-center justify-center w-full h-full">
+        <Link href={`/dashboard/habitaciones/${habitacion.id}`} className="flex items-center justify-center w-full h-full">
           <Settings className="w-4 h-4 transition-transform group-hover:rotate-45" />
         </Link>
       </div>

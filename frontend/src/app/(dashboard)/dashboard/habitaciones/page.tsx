@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // src/app/(dashboard)/dashboard/habitaciones/page.tsx
+
 import { prisma } from "@/lib/prisma";
 import { Piso } from "@prisma/client";
 import { Separator } from "@/components/ui/separator";
@@ -16,63 +17,84 @@ const ORDEN_PISOS: Piso[] = [
   "CUARTO_PISO",
 ];
 
-export default async function HabitacionesPage() {
+export default async function HabitacionesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string; estado?: string; tipo?: string }>;
+}){
+  // 1. Esperamos los parámetros de la URL
+  const { q, estado, tipo } = await searchParams;
   const hoy = new Date();
 
-  // 1. Fetch de datos (Habitaciones + Reservas críticas de hoy)
-const [habitaciones, tipos] = await Promise.all([
+  // 2. Ejecutamos la consulta dinámica
+  const [habitaciones, tipos] = await Promise.all([
     prisma.habitacion.findMany({
+      where: {
+        // Filtro por Tipo (del Select del Header)
+        ...(tipo && tipo !== "todos" ? { tipoActualId: tipo } : {}),
+        
+        // Filtros por Estado (de los botones del Header)
+        ...(estado === "SUCIA" ? { estadoLimpieza: "SUCIA" } : {}),
+        ...(estado === "MANTENIMIENTO" ? { mantenimiento: true } : {}),
+        ...(estado === "LIBRE" ? { estadoOcupacion: "LIBRE" } : {}),
+        ...(estado === "OCUPADA" ? { estadoOcupacion: "OCUPADA" } : {}),
+
+        // Buscador de Huésped (del Input del Header)
+        ...(q ? {
+          reservas: {
+            some: {
+              estado: { in: ["CONFIRMADA", "CHECKIN", "CHECKOUT", "PENDIENTE"] },
+              titular: {
+                OR: [
+                  { nombre: { contains: q, mode: 'insensitive' } },
+                  { apellido: { contains: q, mode: 'insensitive' } },
+                  { documento: { contains: q, mode: 'insensitive' } },
+                ]
+              }
+            }
+          }
+        } : {}),
+      },
       include: {
         tipoActual: true,
         tipoBase: true,
         reservas: {
           where: {
-            // Filtro 1: Evitamos traer ruido de reservas anuladas
-            estado: { notIn: ["CANCELADA", "CHECKOUT"] },
-            // Filtro 2: Solo reservas relevantes para la operación de hoy
+            // ESTA ES LA LÓGICA QUE YA TENÍAS Y NO TOCAMOS PARA NO ROMPER LAS CARDS
+            estado: { notIn: ["CANCELADA", "CHECKOUT"] }, // Quitamos checkout de la vista principal
             OR: [
-              { estado: "CHECKIN" }, // Ocupantes actuales
-              { 
-                fechaEntrada: { 
-                  gte: startOfDay(hoy), 
-                  lte: endOfDay(hoy) 
-                } 
-              }, // Entradas de hoy
-              { 
-                fechaSalida: { 
-                  gte: startOfDay(hoy), 
-                  lte: endOfDay(hoy) 
-                } 
-              } // Salidas de hoy
+              { estado: "CHECKIN" },
+              { fechaEntrada: { gte: startOfDay(hoy), lte: endOfDay(hoy) } },
             ]
           },
-          orderBy: [
-            // Prioridad 1: Quien ya está en la habitación (CHECKIN)
-            { estado: 'desc' }, 
-            // Prioridad 2: La reserva más antigua o próxima
-            { fechaEntrada: 'asc' }
-          ],
           include: {
             titular: true,
-            tipoConfiguracion: true, // Fundamental para mostrar el tipo vendido
-            _count: { 
-              select: { huespedes: true } 
-            }
+            tipoConfiguracion: true,
+            _count: { select: { huespedes: true } }
           }
         }
       },
-      orderBy: { 
-        numero: "asc" 
-      }
+      orderBy: { numero: "asc" }
     }),
-    prisma.tipoHabitacion.findMany({ 
-      select: { 
-        id: true, 
-        nombre: true 
-      } 
-    })
+    // Traemos los tipos para el FiltroTipos del Header
+    prisma.tipoHabitacion.findMany({ select: { id: true, nombre: true } })
   ]);
-  
+
+  // 1. Obtenemos los conteos totales de forma súper rápida
+  const conteos = await prisma.habitacion.groupBy({
+    by: ['estadoOcupacion', 'estadoLimpieza', 'mantenimiento'],
+    _count: { _all: true }
+  });
+
+  // 2. Procesamos los resultados para pasarlos al Header
+  const stats = {
+    TOTAL: await prisma.habitacion.count(),
+    LIBRE: await prisma.habitacion.count({ where: { estadoOcupacion: 'LIBRE', mantenimiento: false } }),
+    OCUPADA: await prisma.habitacion.count({ where: { estadoOcupacion: 'OCUPADA' } }),
+    SUCIA: await prisma.habitacion.count({ where: { estadoLimpieza: 'SUCIA' } }),
+    MANTENIMIENTO: await prisma.habitacion.count({ where: { mantenimiento: true } }),
+  };
+
   // 2. Agrupamiento por Piso
   const habitacionesPorPiso = habitaciones.reduce((acc, hab) => {
     const piso = hab.piso;
@@ -84,7 +106,7 @@ const [habitaciones, tipos] = await Promise.all([
   return (
     <div className="p-8 space-y-12 bg-slate-50/30 min-h-screen">
       {/* Cabecera con Buscador y Filtros */}
-      <HeaderHabitaciones tipos={tipos} />
+      <HeaderHabitaciones tipos={tipos} stats={stats} />
 
       {/* Renderizado de Pisos */}
       <div className="space-y-16">

@@ -20,3 +20,4 @@ export type HabitacionDashboard = Prisma.HabitacionGetPayload<{
 
 // Definimos un tipo específico para la reserva que viene dentro de la habitación
 export type ReservaDashboard = HabitacionDashboard["reservas"][0];
+export type FiltroEstado = "TODAS" | "LIBRE" | "OCUPADA" | "SUCIA" | "MANTENIMIENTO";

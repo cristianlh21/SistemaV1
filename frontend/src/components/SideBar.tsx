@@ -50,6 +50,12 @@ const items: MenuItem[] = [
     rolesPermitidos: ["ADMIN", "MUCAMA", "RECEPCIONISTA"],
   },
   {
+    title: "Planning",
+    url: "/dashboard/planning",
+    icon: Home,
+    rolesPermitidos: ["ADMIN", "MUCAMA", "RECEPCIONISTA"],
+  },
+  {
     title: "Reservas",
     url: "/dashboard/reservas",
     icon: ConciergeBell,
