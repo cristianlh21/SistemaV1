@@ -3,6 +3,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
+import { EstadoReserva } from "@prisma/client"; // Importa el tipo real
 
 export async function ejecutarCheckin(reservaId: string, datos: { huespedes: any[], montoPago?: number, metodoPago?: any }) {
   try {
@@ -84,5 +85,45 @@ export async function ejecutarCheckin(reservaId: string, datos: { huespedes: any
   } catch (error: any) {
     console.error("ERROR EN CHECKIN:", error);
     return { success: true, error: null };
+  }
+}
+
+export async function cambiarEstadoExcepcion(
+  reservaId: string, 
+  nuevoEstado: EstadoReserva
+) {
+  try {
+    // 1. Buscamos la reserva y la guardamos en la variable 'reservaEncontrada'
+    const reservaEncontrada = await prisma.reserva.findUnique({
+      where: { id: reservaId },
+      select: { habitacionId: true } // Solo necesitamos el ID de la habitación
+    });
+
+    // 2. Si no existe, cortamos la ejecución
+    if (!reservaEncontrada) {
+      return { success: false, error: "La reserva no existe" };
+    }
+
+    // 3. Ahora que tenemos 'reservaEncontrada', podemos usar su 'habitacionId'
+    await prisma.$transaction([
+      prisma.reserva.update({
+        where: { id: reservaId },
+        data: { estado: nuevoEstado }
+      }),
+      prisma.habitacion.update({
+        where: { id: reservaEncontrada.habitacionId }, // <-- AQUÍ usamos la variable correcta
+        data: { 
+          estadoOcupacion: "LIBRE" 
+        } 
+      })
+    ]);
+
+    revalidatePath("/dashboard/habitaciones");
+    revalidatePath("/dashboard/planning");
+    
+    return { success: true };
+  } catch (error) {
+    console.error("Error en la transacción:", error);
+    return { success: false, error: "Error al actualizar la base de datos" };
   }
 }

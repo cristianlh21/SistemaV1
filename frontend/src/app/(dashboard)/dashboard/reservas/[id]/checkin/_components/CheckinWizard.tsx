@@ -1,23 +1,24 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { ReservaParaCheckin } from "../types";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { 
-  Users, 
-  BedDouble, 
-  UserPlus, 
-  Trash2, 
+import {
+  Users,
+  BedDouble,
+  UserPlus,
+  Trash2,
   MapPin,
   CheckCircle2,
-  UserCheck
+  AlertTriangle,
+  XCircle,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { ejecutarCheckin } from "../_actions";
+import { ejecutarCheckin, cambiarEstadoExcepcion } from "../_actions";
 import { useRouter } from "next/navigation";
 
 interface HuespedForm {
@@ -35,20 +36,17 @@ interface Props {
 export function CheckinWizard({ reserva }: Props) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
-  
-  // PROBLEMA 1: El checkbox ahora arranca seleccionado
   const [titularSeHospeda, setTitularSeHospeda] = useState(true);
-  
-  // Inicializamos el estado con los datos del titular ya cargados
-  const [huespedes, setHuespedes] = useState<HuespedForm[]>(() => {
-    const datosTitular: HuespedForm = {
+
+  // Inicializamos con los datos del titular
+  const [huespedes, setHuespedes] = useState<HuespedForm[]>(() => [
+    {
       nombre: reserva.titular.nombre,
       apellido: reserva.titular.apellido,
       documento: reserva.titular.documento,
-      direccion: reserva.titular.direccion || ""
-    };
-    return [datosTitular];
-  });
+      direccion: reserva.titular.direccion || "",
+    },
+  ]);
 
   const handleTitularAsHuesped = (checked: boolean) => {
     setTitularSeHospeda(checked);
@@ -57,60 +55,97 @@ export function CheckinWizard({ reserva }: Props) {
         nombre: reserva.titular.nombre,
         apellido: reserva.titular.apellido,
         documento: reserva.titular.documento,
-        direccion: reserva.titular.direccion || ""
+        direccion: reserva.titular.direccion || "",
       };
-      setHuespedes(prev => [datosTitular, ...prev]);
+      setHuespedes((prev) => [datosTitular, ...prev]);
     } else {
-      // Al desmarcar, quitamos al titular por su documento
-      setHuespedes(prev => prev.filter(h => h.documento !== reserva.titular.documento));
+      setHuespedes((prev) =>
+        prev.filter((h) => h.documento !== reserva.titular.documento),
+      );
     }
   };
 
   const agregarHuesped = () => {
-    setHuespedes([...huespedes, { nombre: "", apellido: "", documento: "", direccion: "" }]);
+    setHuespedes([
+      ...huespedes,
+      { nombre: "", apellido: "", documento: "", direccion: "" },
+    ]);
   };
 
   const eliminarHuesped = (index: number) => {
     setHuespedes(huespedes.filter((_, i) => i !== index));
   };
 
-  const actualizarHuesped = (index: number, campo: keyof HuespedForm, valor: string) => {
+  const actualizarHuesped = (
+    index: number,
+    campo: keyof HuespedForm,
+    valor: string,
+  ) => {
     const nuevos = [...huespedes];
     nuevos[index] = { ...nuevos[index], [campo]: valor };
     setHuespedes(nuevos);
   };
 
+  // ACCIÓN PRINCIPAL: CHECK-IN
   const handleFinalizar = async () => {
-    if (huespedes.length === 0) return toast.error("Debe haber al menos un huésped");
-    const incompletos = huespedes.some(h => !h.nombre || !h.apellido || !h.documento);
-    if (incompletos) return toast.error("Completa todos los campos obligatorios");
+    if (huespedes.length === 0)
+      return toast.error("Debe haber al menos un huésped");
+    const incompletos = huespedes.some(
+      (h) => !h.nombre || !h.apellido || !h.documento,
+    );
+    if (incompletos)
+      return toast.error("Completa todos los campos obligatorios");
 
     try {
       setLoading(true);
       const res = await ejecutarCheckin(reserva.id, { huespedes });
-
       if (res.success) {
-        toast.success("Check-in exitoso");
-        router.push(`/dashboard/reservas/${reserva.id}`);
+        toast.success("Check-in exitoso. Huésped en habitación.");
+        router.push(`/dashboard/habitaciones`);
         router.refresh();
-      } else {
-        toast.error("Error al procesar el ingreso");
       }
     } catch (error) {
-      toast.error("Error de conexión");
+      toast.error("Error al procesar el ingreso");
     } finally {
       setLoading(false);
     }
   };
 
-  const saldo = reserva.total - reserva.movimientos
-    .filter(m => m.tipo === "INGRESO")
-    .reduce((acc, m) => acc + m.monto, 0);
+  // ACCIÓN SECUNDARIA: EXCEPCIONES (CANCELADA / NOSHOW)
+ const handleEstadoExtra = async (tipo: "CANCELADA" | "NOSHOW") => {
+  // Debug: Pon esto para ver si el clic llega aquí
+  console.log("Intentando cambiar a:", tipo);
+  
+  const mensaje = tipo === "NOSHOW" 
+    ? "¿Marcar como NO-SHOW? La habitación se liberará." 
+    : "¿Confirmas la cancelación?";
+  
+  if (!confirm(mensaje)) return;
+
+  try {
+    setLoading(true);
+    const res = await cambiarEstadoExcepcion(reserva.id, tipo);
+    
+    if (res.success) {
+      toast.success("Estado actualizado");
+      router.push("/dashboard/habitaciones");
+      router.refresh();
+    }
+  } catch (error) {
+    toast.error("Error de red");
+  } finally {
+    setLoading(false);
+  }
+};
+  const saldo =
+    reserva.total -
+    reserva.movimientos
+      .filter((m) => m.tipo === "INGRESO")
+      .reduce((acc, m) => acc + m.monto, 0);
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-      
-      {/* SECCIÓN FORMULARIO (ESTÉTICA ORIGINAL) */}
+    <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start max-w-7xl mx-auto p-4">
+      {/* COLUMNA IZQUIERDA: FORMULARIO DE HUÉSPEDES */}
       <div className="lg:col-span-8 space-y-6">
         <Card className="p-8 border-none shadow-sm bg-white rounded-[2.5rem]">
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
@@ -118,69 +153,109 @@ export function CheckinWizard({ reserva }: Props) {
               <div className="w-12 h-12 bg-slate-900 text-white rounded-2xl flex items-center justify-center shadow-lg">
                 <Users className="w-6 h-6" />
               </div>
-              <h2 className="text-xl font-black uppercase tracking-tighter text-slate-800">Ocupantes</h2>
+              <div>
+                <h2 className="text-xl font-black uppercase tracking-tighter text-slate-800 leading-none">
+                  Ocupantes
+                </h2>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">
+                  Registro de pasajeros
+                </p>
+              </div>
             </div>
 
-            <div className="flex items-center gap-2 bg-slate-50 p-3 rounded-2xl border border-slate-100">
-               <input 
-                type="checkbox" 
-                id="checkTitular" 
-                className="w-4 h-4 rounded accent-primary cursor-pointer"
+            <div className="flex items-center gap-3 bg-slate-50 p-3 px-5 rounded-2xl border border-slate-100">
+              <input
+                type="checkbox"
+                id="checkTitular"
+                className="w-4 h-4 rounded accent-slate-900 cursor-pointer"
                 checked={titularSeHospeda}
                 onChange={(e) => handleTitularAsHuesped(e.target.checked)}
-               />
-               <Label htmlFor="checkTitular" className="text-[10px] font-black uppercase text-slate-500 cursor-pointer">
-                 El titular se hospeda
-               </Label>
+              />
+              <Label
+                htmlFor="checkTitular"
+                className="text-[10px] font-black uppercase text-slate-500 cursor-pointer tracking-widest"
+              >
+                El titular se hospeda
+              </Label>
             </div>
           </div>
 
           <div className="space-y-6">
             {huespedes.map((h, index) => (
-              <div key={index} className="p-8 bg-slate-50 rounded-[2rem] border border-slate-100 relative group transition-all">
-                {/* Botón eliminar (Solo si no es el titular marcado) */}
+              <div
+                key={index}
+                className="p-8 bg-slate-50 rounded-[2rem] border border-slate-100 relative group transition-all hover:border-slate-200"
+              >
                 {index > 0 && (
-                  <button 
+                  <button
                     onClick={() => eliminarHuesped(index)}
                     className="absolute -top-2 -right-2 bg-white border-2 border-slate-100 text-rose-500 p-2 rounded-full shadow-sm hover:scale-110 transition-transform"
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>
                 )}
-                
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-2">
-                    <Label className="text-[10px] font-black uppercase text-slate-400 ml-1 tracking-widest">Nombre</Label>
-                    <Input 
-                      className="h-12 rounded-xl bg-white border-2 border-slate-100 focus:border-primary transition-all font-bold uppercase text-xs"
+                    <Label className="text-[10px] font-black uppercase text-slate-400 ml-1 tracking-widest">
+                      Nombre
+                    </Label>
+                    <Input
+                      className="h-12 rounded-xl bg-white border-2 border-slate-100 focus:border-slate-900 transition-all font-bold uppercase text-xs"
                       value={h.nombre}
-                      onChange={(e) => actualizarHuesped(index, "nombre", e.target.value.toUpperCase())}
+                      onChange={(e) =>
+                        actualizarHuesped(
+                          index,
+                          "nombre",
+                          e.target.value.toUpperCase(),
+                        )
+                      }
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label className="text-[10px] font-black uppercase text-slate-400 ml-1 tracking-widest">Apellido</Label>
-                    <Input 
-                      className="h-12 rounded-xl bg-white border-2 border-slate-100 focus:border-primary transition-all font-bold uppercase text-xs"
+                    <Label className="text-[10px] font-black uppercase text-slate-400 ml-1 tracking-widest">
+                      Apellido
+                    </Label>
+                    <Input
+                      className="h-12 rounded-xl bg-white border-2 border-slate-100 focus:border-slate-900 transition-all font-bold uppercase text-xs"
                       value={h.apellido}
-                      onChange={(e) => actualizarHuesped(index, "apellido", e.target.value.toUpperCase())}
+                      onChange={(e) =>
+                        actualizarHuesped(
+                          index,
+                          "apellido",
+                          e.target.value.toUpperCase(),
+                        )
+                      }
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label className="text-[10px] font-black uppercase text-slate-400 ml-1 tracking-widest">N° Documento</Label>
-                    <Input 
-                      className="h-12 rounded-xl bg-white border-2 border-slate-100 focus:border-primary transition-all font-bold uppercase text-xs"
+                    <Label className="text-[10px] font-black uppercase text-slate-400 ml-1 tracking-widest">
+                      N° Documento
+                    </Label>
+                    <Input
+                      className="h-12 rounded-xl bg-white border-2 border-slate-100 focus:border-slate-900 transition-all font-bold uppercase text-xs"
                       value={h.documento}
-                      onChange={(e) => actualizarHuesped(index, "documento", e.target.value)}
+                      onChange={(e) =>
+                        actualizarHuesped(index, "documento", e.target.value)
+                      }
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label className="text-[10px] font-black uppercase text-slate-400 ml-1 tracking-widest">Dirección / Procedencia</Label>
+                    <Label className="text-[10px] font-black uppercase text-slate-400 ml-1 tracking-widest">
+                      Procedencia
+                    </Label>
                     <div className="relative">
                       <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300" />
-                      <Input 
-                        className="pl-10 h-12 rounded-xl bg-white border-2 border-slate-100 focus:border-primary transition-all font-bold uppercase text-xs"
+                      <Input
+                        className="pl-10 h-12 rounded-xl bg-white border-2 border-slate-100 focus:border-slate-900 transition-all font-bold uppercase text-xs"
                         value={h.direccion}
-                        onChange={(e) => actualizarHuesped(index, "direccion", e.target.value.toUpperCase())}
+                        onChange={(e) =>
+                          actualizarHuesped(
+                            index,
+                            "direccion",
+                            e.target.value.toUpperCase(),
+                          )
+                        }
                       />
                     </div>
                   </div>
@@ -188,11 +263,11 @@ export function CheckinWizard({ reserva }: Props) {
               </div>
             ))}
 
-            <Button 
-              type="button" 
-              variant="outline" 
+            <Button
+              type="button"
+              variant="outline"
               onClick={agregarHuesped}
-              className="w-full h-14 rounded-2xl border-dashed border-2 border-slate-200 text-slate-400 hover:text-primary hover:border-primary/50 transition-all font-bold text-xs uppercase"
+              className="w-full h-14 rounded-2xl border-dashed border-2 border-slate-200 text-slate-400 hover:text-slate-900 hover:border-slate-900 transition-all font-bold text-xs uppercase tracking-widest"
             >
               <UserPlus className="w-4 h-4 mr-2" /> Añadir otro acompañante
             </Button>
@@ -200,42 +275,74 @@ export function CheckinWizard({ reserva }: Props) {
         </Card>
       </div>
 
-      {/* SECCIÓN RESUMEN DERECHA */}
-      <div className="lg:col-span-4">
+      {/* COLUMNA DERECHA: RESUMEN Y ACCIONES FINALES */}
+      <div className="lg:col-span-4 space-y-6">
         <Card className="p-8 border-none shadow-xl bg-white rounded-[2.5rem] sticky top-8">
           <div className="flex items-center gap-3 mb-8">
-            <div className="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center text-primary">
+            <div className="w-10 h-10 bg-emerald-500/10 rounded-xl flex items-center justify-center text-emerald-600">
               <CheckCircle2 className="w-6 h-6" />
             </div>
-            <h3 className="text-lg font-black uppercase tracking-tighter text-slate-800">Confirmación</h3>
+            <h3 className="text-lg font-black uppercase tracking-tighter text-slate-800">
+              Finalizar Ingreso
+            </h3>
           </div>
 
           <div className="space-y-4 mb-8">
             <div className="bg-slate-50 p-5 rounded-2xl border border-slate-100">
-              <p className="text-[9px] font-black text-slate-400 uppercase mb-2">Configuración</p>
+              <p className="text-[9px] font-black text-slate-400 uppercase mb-2 tracking-widest">
+                Configuración Solicitada
+              </p>
               <div className="flex items-center gap-3">
-                <BedDouble className="w-5 h-5 text-primary" />
+                <BedDouble className="w-5 h-5 text-slate-900" />
                 <span className="font-bold text-xs uppercase text-slate-700">
-                  {reserva.tipoConfiguracion?.nombre || "Base"}
+                  {reserva.tipoConfiguracion?.nombre || "Cama Matrimonial"}
                 </span>
               </div>
             </div>
 
-            <div className="bg-primary p-6 rounded-[2rem] text-center shadow-lg shadow-primary/20">
-               <p className="text-[10px] font-black text-primary-foreground/80 uppercase mb-1 tracking-widest">Saldo Pendiente</p>
-               <p className="text-4xl font-black text-white tracking-tighter">
-                  ${saldo.toLocaleString()}
-               </p>
+            <div className="bg-slate-900 p-6 rounded-[2rem] text-center shadow-lg shadow-slate-200">
+              <p className="text-[10px] font-black text-slate-400 uppercase mb-1 tracking-widest">
+                Saldo Pendiente
+              </p>
+              <p className="text-4xl font-black text-white tracking-tighter">
+                ${saldo.toLocaleString()}
+              </p>
             </div>
           </div>
 
-          <Button 
+          <Button
             onClick={handleFinalizar}
             disabled={loading}
-            className="w-full h-16 rounded-2xl font-black uppercase text-xs tracking-widest bg-emerald-500 hover:bg-emerald-600 text-white shadow-lg border-b-4 border-emerald-700 active:border-b-0 transition-all active:scale-95"
+            className="w-full h-16 rounded-2xl font-black uppercase text-xs tracking-[0.2em] bg-emerald-500 hover:bg-emerald-600 text-white shadow-lg border-b-4 border-emerald-700 active:border-b-0 transition-all active:scale-95 disabled:opacity-50"
           >
-            {loading ? "Registrando..." : "Finalizar Check-in"}
+            {loading ? "Procesando..." : "Ingresar Huéspedes"}
           </Button>
+
+          {/* SECCIÓN DE INCIDENCIAS */}
+          <div className="grid grid-cols-2 gap-3">
+            <Button
+              type="button" // <--- CRÍTICO: Evita que dispare el Check-in
+              variant="outline"
+              onClick={(e) => {
+                e.preventDefault(); // Doble seguridad
+                handleEstadoExtra("NOSHOW");
+              }}
+              disabled={loading}
+              className="..."
+            >
+              <AlertTriangle className="w-3 h-3 mr-1" /> No-Show
+            </Button>
+
+            <Button
+              type="button" // <--- AGREGA ESTO TAMBIÉN
+              variant="outline"
+              onClick={() => handleEstadoExtra("CANCELADA")}
+              disabled={loading}
+              className="..."
+            >
+              <XCircle className="w-3 h-3 mr-1" /> Cancelar
+            </Button>
+          </div>
         </Card>
       </div>
     </div>
